@@ -1,6 +1,10 @@
 import smtplib
 import imaplib
+import json
+import os
+import sys
 import time
+import urllib.request
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.utils import make_msgid
@@ -13,6 +17,12 @@ imap_server = "mail.infomaniak.com"
 imap_port = 993
 username = "secretariat@saleshacking.fr"
 password = "Secretariat75@"
+DEFAULT_FORMATION_LINK = "https://socrate-backend-v-hgeeg0anbtddb9cy.francecentral-01.azurewebsites.net/"
+FORMATION_PLATFORM_ID = os.environ.get("FORMATION_PLATFORM_ID") or (sys.argv[1] if len(sys.argv) > 1 else "1")
+FORMATION_LINK_API_URL = os.environ.get(
+    "FORMATION_LINK_API_URL",
+    f"{DEFAULT_FORMATION_LINK.rstrip('/')}/api/public/email-formation-link?platform_id={FORMATION_PLATFORM_ID}",
+)
 
 # Liste des destinataires (ajoutez/supprimez selon vos besoins)
 DESTINATAIRES = [
@@ -25,7 +35,20 @@ DESTINATAIRES = [
 ]
 
 
-def generer_contenu_html():
+def get_formation_link():
+    """Récupère le lien configuré depuis la plateforme, avec fallback local."""
+    try:
+        with urllib.request.urlopen(FORMATION_LINK_API_URL, timeout=8) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+            link = str(payload.get("url") or "").strip()
+            if payload.get("success") and link:
+                return link
+    except Exception as exc:
+        print(f"⚠️ Impossible de récupérer le lien plateforme, fallback utilisé: {exc}")
+    return DEFAULT_FORMATION_LINK
+
+
+def generer_contenu_html(formation_link):
     """Génère le contenu HTML du mail de rappel - Style Sales Hacking responsive"""
     html_content = """
     <!DOCTYPE html>
@@ -386,7 +409,7 @@ def generer_contenu_html():
                 </ul>
                 
                 <div class="cta-container">
-                    <a href="https://socrate-backend-v-hgeeg0anbtddb9cy.francecentral-01.azurewebsites.net/" 
+                    <a href="__FORMATION_LINK__" 
                        class="cta-button" target="_blank">
                          Accéder à la plateforme de formation
                     </a>
@@ -408,7 +431,7 @@ def generer_contenu_html():
     </body>
     </html>
     """
-    return html_content
+    return html_content.replace("__FORMATION_LINK__", formation_link)
 
 
 def envoyer_rappel():
@@ -419,7 +442,9 @@ def envoyer_rappel():
 
     sender = username
     subject = "Lien de la session demain matin - Formation TP CRCD"
-    html_content = generer_contenu_html()
+    formation_link = get_formation_link()
+    html_content = generer_contenu_html(formation_link)
+    print(f"🔗 Lien formation utilisé: {formation_link}")
 
     envois_reussis = 0
     envois_echoues = 0
