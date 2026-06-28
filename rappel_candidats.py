@@ -1,8 +1,10 @@
 import smtplib
 import imaplib
 import json
+import os
+import sys
 import time
-from pathlib import Path
+import urllib.request
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.utils import make_msgid
@@ -16,7 +18,11 @@ imap_port = 993
 username = "secretariat@saleshacking.fr"
 password = "Secretariat75@"
 DEFAULT_FORMATION_LINK = "https://socrate-backend-v-hgeeg0anbtddb9cy.francecentral-01.azurewebsites.net/"
-CONFIG_PATH = Path(__file__).with_name("config.json")
+FORMATION_PLATFORM_ID = os.environ.get("FORMATION_PLATFORM_ID") or (sys.argv[1] if len(sys.argv) > 1 else "1")
+FORMATION_LINK_API_URL = os.environ.get(
+    "FORMATION_LINK_API_URL",
+    f"{DEFAULT_FORMATION_LINK.rstrip('/')}/api/public/email-formation-link?platform_id={FORMATION_PLATFORM_ID}",
+)
 
 # Liste des destinataires (ajoutez/supprimez selon vos besoins)
 DESTINATAIRES = [
@@ -30,14 +36,15 @@ DESTINATAIRES = [
 
 
 def get_formation_link():
-    """Récupère le lien modifiable à la main dans config.json."""
+    """Récupère le lien configuré depuis la plateforme, avec fallback local."""
     try:
-        payload = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-        link = str(payload.get("formation_link") or "").strip()
-        if link:
-            return link
+        with urllib.request.urlopen(FORMATION_LINK_API_URL, timeout=8) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+            link = str(payload.get("url") or "").strip()
+            if payload.get("success") and link:
+                return link
     except Exception as exc:
-        print(f"⚠️ Impossible de lire config.json, fallback utilisé: {exc}")
+        print(f"⚠️ Impossible de récupérer le lien plateforme, fallback utilisé: {exc}")
     return DEFAULT_FORMATION_LINK
 
 
